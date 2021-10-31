@@ -7,3 +7,7 @@ def hello_world():
 
 if __name__ == '__main__':
    app.run(debug = True) """
+
+def test(input_var):
+   if input_var:
+      print(input_var)
