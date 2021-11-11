@@ -11,3 +11,5 @@ if __name__ == '__main__':
 def test(input_var):
    if input_var:
       print(input_var)
+   else:
+      raise Exception
