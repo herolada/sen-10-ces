@@ -27,5 +27,7 @@ def translate_text(text = "Hallo, das Welt!"):
     print(u"Translation: {}".format(result["translatedText"]))
     print(u"Detected source language: {}".format(result["detectedSourceLanguage"]))
 
+    return(result["translatedText"])
+
 
 translate_text("A čistý záchody, to mám rád!")

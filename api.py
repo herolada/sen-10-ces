@@ -1,3 +1,4 @@
+from re import A
 from flask import Flask, request
 from flask_restx import Api, Resource
 import json
@@ -48,7 +49,9 @@ sentences_dict = {
                     {'sentences': ["Jak se máš?","Tohle je zajímavá věta."]}
                 }
 
-sentences = None
+id_counter = 0
+
+sentences = {}
 
 def generate_sentences(language):
     return sentences_dict[language]
@@ -58,8 +61,12 @@ class Sentences(Resource):
     @app.doc(responses={200: 'OK', 400: 'Invalid Argument'}, description="Get sentences in the given language.")  # Documentation of route
     def get(self, language):
         if language in languages:
-            sentences = generate_sentences(language)
-            return sentences
+            sentences_json = generate_sentences(language)
+            for sentence in sentences_json['sentences']:
+                global id_counter
+                sentences[str(id_counter)] = sentence
+                id_counter += 1
+            return sentences_json
         else:
             app.abort(400, status="Language not supported", statusCode="400")
 
@@ -68,7 +75,9 @@ class Sentences(Resource):
 # **********************************************************************
 
 def check_sentence_id(sentence_id):
-    return True
+    if sentence_id in sentences.keys():
+        return True
+    return False
 
 translations = {}
 
