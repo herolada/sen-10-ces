@@ -4,7 +4,7 @@ from flask_restx import Api,Resource
 flask_app = Flask(__name__)
 app = Api(app=flask_app,
           version="1.0",
-          title="Sen-10-ces",
+          title="VIA app",
           description="Demo app for via")
 
 @app.route('/language', methods = ['GET','POST'])
