@@ -5,6 +5,9 @@ import json
 import six
 from google.cloud import translate_v2 as translate
 from translate import translate_text
+from similarity import get_similarity
+from classes import Sentence
+import queue
 
 flask_app = Flask(__name__)
 app = Api(app=flask_app,
@@ -41,7 +44,7 @@ class Languages(Resource):
 # **********************************************************************
 
 # TEMPORARY SENTENCES:
-sentences_dict = {
+sentences_generator = {
                 'german':
                     {'sentences': ["Der Bebauungsplan für das Gebiet rund um den Humboldthafen am Hauptbahnhof in Mitte muss neu aufgestellt werden.",
                         "Das teilte die Senatsverwaltung für Stadtentwicklung am Mittwoch mit."],},
@@ -51,10 +54,12 @@ sentences_dict = {
 
 id_counter = 0
 
-sentences = {}
+sentences_dict = {}
+sentences_queue = queue.Queue()
 
+# TODO: IMPLEMENT THIS IN A REAL WAY
 def generate_sentences(language):
-    return sentences_dict[language]
+    return sentences_generator[language]
 
 @app.route("/sentences/<language>")  # Define the route
 class Sentences(Resource):
@@ -64,7 +69,9 @@ class Sentences(Resource):
             sentences_json = generate_sentences(language)
             for sentence in sentences_json['sentences']:
                 global id_counter
-                sentences[str(id_counter)] = sentence
+                s = Sentence(sentence)
+                sentences_dict[str(id_counter)] = s
+                sentences_queue.put(str(id_counter))
                 id_counter += 1
             return sentences_json
         else:
@@ -74,12 +81,25 @@ class Sentences(Resource):
 # **********************************************************************
 # **********************************************************************
 
+@app.route("/next_sentence/")  # Define the route
+class NextSentence(Resource):
+    @app.doc(responses={200: 'OK', 400: 'Invalid Argument'}, description="Get next sentence.")  # Documentation of route
+    def get(self):
+        if not sentences_queue.empty():
+            s_id = sentences_queue.get()
+            s = sentences_dict[s_id]
+            return {'sentence': s.sentence}
+        else:
+            app.abort(400, status="No sentences left", statusCode="400")
+
+# **********************************************************************
+# **********************************************************************
+# **********************************************************************
+
 def check_sentence_id(sentence_id):
-    if sentence_id in sentences.keys():
+    if sentence_id in sentences_dict.keys():
         return True
     return False
-
-translations = {}
 
 parser = app.parser()
 parser.add_argument('data', type=str, help='Translation', location='form')
@@ -92,22 +112,23 @@ class Translations(Resource):
     @app.expect(parser)
     def put(self, sentence_id):
         if check_sentence_id(sentence_id):
-            translations['sentence_id'] = request.form['data']
-            return {'translation': translations['sentence_id']}
+            s = sentences_dict[sentence_id]
+            s.translation = request.form['data']
+            sentences_dict[sentence_id] = s
+            return {'translation': s.translation}
         else:
             app.abort(400, status="Invalid sentence id", statusCode="400")
 
     def get(self, sentence_id):
         if check_sentence_id(sentence_id):
-            return {'translation': translations['sentence_id']}
+            s = sentences_dict[sentence_id]
+            return {'translation': s.translation}
         else:
             app.abort(400, status="Invalid sentence id", statusCode="400")
 
 # **********************************************************************
 # **********************************************************************
 # **********************************************************************
-
-correct_translations = {}
 
 @app.route("/correct_translations/<sentence_id>")
 class CorrectTranslations(Resource):    
@@ -115,10 +136,10 @@ class CorrectTranslations(Resource):
 
     def get(self, sentence_id):
         if check_sentence_id(sentence_id):
-            sentence = sentences[sentence_id]
-            correct_translation = translate_text(sentence)
-            correct_translations[sentence_id] = correct_translation
-            return {'correct_translation': correct_translation}
+            s = sentences_dict[sentence_id]
+            s.generate_correct_translation()
+            sentences_dict[sentence_id] = s
+            return {'correct_translation': s.correct_translation}
         else:
             app.abort(400, status="Invalid sentence id", statusCode="400")
 
@@ -126,6 +147,44 @@ class CorrectTranslations(Resource):
 # **********************************************************************
 # **********************************************************************
 
+@app.route("/text_comparison/<sentence_id>")
+class TextComparison(Resource):
+    @app.doc(responses={200: 'OK', 400: 'Invalid Argument'}, description="Compare user translation and correct translation of a sentence.")
+
+    def get(self, sentence_id):
+        if check_sentence_id(sentence_id):
+            s = sentences_dict[sentence_id]
+            s.calculate_score()
+            sentences_dict[sentence_id] = s
+            return {'translation': s.translation, 'correct_translation': s.correct_translation, 'score': str(s.score)}
+        else:
+            app.abort(400, status="Invalid sentence id", statusCode="400")
+
+# **********************************************************************
+# **********************************************************************
+# **********************************************************************
+
+@app.route("/confirm/<sentence_id>/<accept>")
+class TranslationConfirmation(Resource):
+    @app.doc(responses={200: 'OK', 400: 'Invalid Argument'}, description="User either accepts or declines their translation of a sentence.")
+
+    def post(self, sentence_id, accept):
+        if check_sentence_id(sentence_id):
+            if not accept:
+                sentences_queue.put(sentence_id)
+            return {'accept': accept}
+        else:
+            app.abort(400, status="Invalid sentence id", statusCode="400")
+
+# **********************************************************************
+# **********************************************************************
+# **********************************************************************
+
+
+
+# **********************************************************************
+# **********************************************************************
+# **********************************************************************
 """Run Flask app"""
 if __name__ == '__main__':
     flask_app.run(debug=True)
